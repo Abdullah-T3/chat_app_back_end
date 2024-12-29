@@ -1,246 +1,236 @@
 const express = require('express');
-const mysql = require('mysql2');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const mysql = require('mysql2');
+const dotenv = require('dotenv');
 const { body, validationResult } = require('express-validator');
-require('dotenv').config();
+const cors = require('cors');
 
+// Load environment variables from .env
+dotenv.config();
+
+// Initialize express app
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware
+// Middleware to parse JSON bodies
 app.use(express.json());
+app.use(cors());
 
-// Database connection
+// MySQL database connection
 const db = mysql.createConnection({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'zagdb_chat',
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
 });
 
+// Connect to MySQL
 db.connect((err) => {
   if (err) {
-    console.error('Database connection failed:', err.message);
+    console.error('Could not connect to database:', err);
     process.exit(1);
   }
-  console.log('Connected to the database.');
+  console.log('Connected to the database');
 });
 
-// Helper function for validation
-const validate = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
+// Middleware to verify JWT token
+const verifyToken = (req, res, next) => {
+  const token = req.headers['authorization']?.split(' ')[1];
+  if (!token) {
+    return res.status(403).json({ error: 'No token provided' });
   }
-  next();
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to authenticate token' });
+    }
+    req.userId = decoded.id;
+    next();
+  });
 };
 
-// Helper function to generate JWT
-const generateToken = (user) => {
-  return jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'secret_key', { expiresIn: '1h' });
-};
-
-// Routes
-
-// Sign Up
+// -------------- SIGNUP --------------------
 app.post(
   '/signup',
   [
-    body('email').isEmail().withMessage('Invalid email format'),
-    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
+    body('email').isEmail().withMessage('Please provide a valid email'),
+    body('password')
+      .isLength({ min: 6 })
+      .withMessage('Password must be at least 6 characters long'),
     body('username').notEmpty().withMessage('Username is required'),
   ],
-  validate,
   async (req, res) => {
-    const { email, password, username } = req.body;
+    // Validate request body
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email, username, password } = req.body;
 
     try {
-      const hashedPassword = await bcrypt.hash(password, 10);
-      db.query(
-        'INSERT INTO users (email, password, username, created_at) VALUES (?, ?, ?, NOW())',
-        [email, hashedPassword, username],
-        (err, result) => {
-          if (err) {
-            if (err.code === 'ER_DUP_ENTRY') {
-              return res.status(400).json({ error: 'Email already exists' });
-            }
-            return res.status(500).json({ error: err.message });
-          }
-          res.status(201).json({ message: 'User created successfully', userId: result.insertId });
-        }
-      );
-    } catch (error) {
-      res.status(500).json({ error: 'Failed to hash password' });
-    }
-  }
-);
-
-// Login
-app.post(
-  '/login',
-  [
-    body('email').isEmail().withMessage('Invalid email format'),
-    body('password').notEmpty().withMessage('Password is required'),
-  ],
-  validate,
-  (req, res) => {
-    const { email, password } = req.body;
-
-    db.query('SELECT * FROM users WHERE email = ?', [email], async (err, results) => {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-
-      if (results.length === 0) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-
-      const user = results[0];
-      const passwordMatch = await bcrypt.compare(password, user.password);
-
-      if (!passwordMatch) {
-        return res.status(401).json({ error: 'Invalid email or password' });
-      }
-
-      const token = generateToken(user);
-      res.json({ message: 'Login successful', token });
-    });
-  }
-);
-
-// Users
-app.post(
-  '/users',
-  [
-    body('email').isEmail().withMessage('Invalid email format'),
-    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
-    body('username').notEmpty().withMessage('Username is required'),
-  ],
-  validate,
-  (req, res) => {
-    const { email, password, username } = req.body;
-    db.query(
-      'INSERT INTO users (email, password, username, created_at) VALUES (?, ?, ?, NOW())',
-      [email, password, username],
-      (err, result) => {
+      // Check if email already exists
+      db.query('SELECT * FROM users WHERE email = ?', [email], async (err, result) => {
         if (err) {
-          return res.status(500).json({ error: err.message });
+          return res.status(500).json({ error: 'Database error' });
         }
-        res.status(201).json({ message: 'User created successfully', userId: result.insertId });
-      }
-    );
+        if (result.length > 0) {
+          return res.status(400).json({ error: 'Email already exists' });
+        }
+
+        // Hash password
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        // Insert new user into the database
+        db.query(
+          'INSERT INTO users (email, username, password, created_at) VALUES (?, ?, ?, NOW())',
+          [email, username, hashedPassword],
+          (err, result) => {
+            if (err) {
+              return res.status(500).json({ error: 'Failed to create user' });
+            }
+            res.status(201).json({ message: 'User created successfully' });
+          }
+        );
+      });
+    } catch (err) {
+      console.error('Server error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 );
-
-app.get('/users', (req, res) => {
-  db.query('SELECT * FROM users', (err, results) => {
+// -------------- GET ALL USERS --------------------
+app.get('/users', verifyToken, (req, res) => {
+  db.query('SELECT id, email, username, created_at FROM users', (err, result) => {
     if (err) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: 'Failed to fetch users' });
     }
-    res.json(results);
+    res.status(200).json(result);
   });
 });
 
-// Posts
-app.post(
-  '/posts',
-  [
-    body('content').notEmpty().withMessage('Content is required'),
-    body('user_id').isUUID().withMessage('Invalid user ID format'),
-  ],
-  validate,
-  (req, res) => {
-    const { content, user_id } = req.body;
+// -------------- LOGIN --------------------
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  // Validate request body
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  try {
+    // Find user by email
+    db.query('SELECT * FROM users WHERE email = ?', [email], async (err, result) => {
+      if (err) {
+        return res.status(500).json({ error: 'Database error' });
+      }
+      if (result.length === 0) {
+        return res.status(400).json({ error: 'Invalid email or password' });
+      }
+
+      const user = result[0];
+
+      // Compare password with hashed password in DB
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ error: 'Invalid email or password' });
+      }
+
+      // Create JWT token
+      const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+      res.json({ message: 'Login successful', token });
+    });
+  } catch (err) {
+    console.error('Server error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// -------------- CREATE POST --------------------
+app.post('/posts', verifyToken, async (req, res) => {
+  const { content } = req.body;
+  const user_id = req.userId;
+
+  // Validate request body
+  if (!content) {
+    return res.status(400).json({ error: 'Content is required' });
+  }
+
+  try {
+    // Insert new post into the database
     db.query(
       'INSERT INTO posts (content, user_id, created_at) VALUES (?, ?, NOW())',
       [content, user_id],
       (err, result) => {
         if (err) {
-          return res.status(500).json({ error: err.message });
+          return res.status(500).json({ error: 'Failed to create post' });
         }
         res.status(201).json({ message: 'Post created successfully', postId: result.insertId });
       }
     );
+  } catch (err) {
+    console.error('Server error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-);
+});
 
-app.get('/posts', (req, res) => {
-  db.query('SELECT * FROM posts', (err, results) => {
+// -------------- GET ALL POSTS --------------------
+app.get('/posts', verifyToken, (req, res) => {
+  db.query('SELECT * FROM posts', (err, result) => {
     if (err) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: 'Failed to fetch posts' });
     }
-    res.json(results);
+    res.status(200).json(result);
   });
 });
 
-// Chats
-app.post(
-  '/chats',
-  [
-    body('user_one').isUUID().withMessage('Invalid user_one ID format'),
-    body('user_two').isUUID().withMessage('Invalid user_two ID format'),
-  ],
-  validate,
-  (req, res) => {
-    const { user_one, user_two } = req.body;
-    db.query(
-      'INSERT INTO chats (user_one, user_two) VALUES (?, ?)',
-      [user_one, user_two],
-      (err, result) => {
-        if (err) {
-          return res.status(500).json({ error: err.message });
-        }
-        res.status(201).json({ message: 'Chat created successfully', chatId: result.insertId });
-      }
-    );
+// -------------- CREATE MESSAGE --------------------
+app.post('/messages', verifyToken, async (req, res) => {
+  const { chat_id, content, receiver_id } = req.body;
+  const sender_id = req.userId;
+
+  // Validate request body
+  if (!chat_id || !content || !receiver_id) {
+    return res.status(400).json({ error: 'Chat ID, content, and receiver ID are required' });
   }
-);
 
-app.get('/chats', (req, res) => {
-  db.query('SELECT * FROM chats', (err, results) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-    res.json(results);
-  });
-});
-
-// Messages
-app.post(
-  '/messages',
-  [
-    body('content').notEmpty().withMessage('Message content is required'),
-    body('chat_id').isUUID().withMessage('Invalid chat ID format'),
-    body('sender_id').isUUID().withMessage('Invalid sender ID format'),
-    body('receiver_id').isUUID().withMessage('Invalid receiver ID format'),
-  ],
-  validate,
-  (req, res) => {
-    const { content, chat_id, sender_id, receiver_id } = req.body;
+  try {
+    // Insert new message into the database
     db.query(
       'INSERT INTO messages (content, chat_id, sender_id, receiver_id, created_at) VALUES (?, ?, ?, ?, NOW())',
       [content, chat_id, sender_id, receiver_id],
       (err, result) => {
         if (err) {
-          return res.status(500).json({ error: err.message });
+          return res.status(500).json({ error: 'Failed to send message' });
         }
         res.status(201).json({ message: 'Message sent successfully', messageId: result.insertId });
       }
     );
+  } catch (err) {
+    console.error('Server error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-);
+});
 
-app.get('/messages', (req, res) => {
-  db.query('SELECT * FROM messages', (err, results) => {
+// -------------- GET MESSAGES --------------------
+app.get('/messages', verifyToken, (req, res) => {
+  const { chat_id } = req.query;
+
+  if (!chat_id) {
+    return res.status(400).json({ error: 'Chat ID is required' });
+  }
+
+  db.query('SELECT * FROM messages WHERE chat_id = ?', [chat_id], (err, result) => {
     if (err) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ error: 'Failed to fetch messages' });
     }
-    res.json(results);
+    res.status(200).json(result);
   });
 });
 
-// Start server
+// -------------- START SERVER --------------------
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+  console.log(`Server is running on http://localhost:${port}`);
 });
