@@ -1,5 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 require('dotenv').config();
 
@@ -34,7 +36,78 @@ const validate = (req, res, next) => {
   next();
 };
 
+// Helper function to generate JWT
+const generateToken = (user) => {
+  return jwt.sign({ id: user.id, email: user.email }, process.env.JWT_SECRET || 'secret_key', { expiresIn: '1h' });
+};
+
 // Routes
+
+// Sign Up
+app.post(
+  '/signup',
+  [
+    body('email').isEmail().withMessage('Invalid email format'),
+    body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
+    body('username').notEmpty().withMessage('Username is required'),
+  ],
+  validate,
+  async (req, res) => {
+    const { email, password, username } = req.body;
+
+    try {
+      const hashedPassword = await bcrypt.hash(password, 10);
+      db.query(
+        'INSERT INTO users (email, password, username, created_at) VALUES (?, ?, ?, NOW())',
+        [email, hashedPassword, username],
+        (err, result) => {
+          if (err) {
+            if (err.code === 'ER_DUP_ENTRY') {
+              return res.status(400).json({ error: 'Email already exists' });
+            }
+            return res.status(500).json({ error: err.message });
+          }
+          res.status(201).json({ message: 'User created successfully', userId: result.insertId });
+        }
+      );
+    } catch (error) {
+      res.status(500).json({ error: 'Failed to hash password' });
+    }
+  }
+);
+
+// Login
+app.post(
+  '/login',
+  [
+    body('email').isEmail().withMessage('Invalid email format'),
+    body('password').notEmpty().withMessage('Password is required'),
+  ],
+  validate,
+  (req, res) => {
+    const { email, password } = req.body;
+
+    db.query('SELECT * FROM users WHERE email = ?', [email], async (err, results) => {
+      if (err) {
+        return res.status(500).json({ error: err.message });
+      }
+
+      if (results.length === 0) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+
+      const user = results[0];
+      const passwordMatch = await bcrypt.compare(password, user.password);
+
+      if (!passwordMatch) {
+        return res.status(401).json({ error: 'Invalid email or password' });
+      }
+
+      const token = generateToken(user);
+      res.json({ message: 'Login successful', token });
+    });
+  }
+);
 
 // Users
 app.post(
