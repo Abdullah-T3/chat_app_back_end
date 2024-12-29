@@ -1,7 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const db = require('../db'); // Assuming you have a db.js for DB queries
-
+const db = require('../config/db');
 // Register User
 exports.registerUser = async (req, res) => {
   const { email, password, username } = req.body;
