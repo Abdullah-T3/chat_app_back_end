@@ -1,20 +1,13 @@
-// routes/messageRoutes.js
-
 const express = require('express');
 const router = express.Router();
-const {
-  getMessagesByChatId,
-  sendMessage,
-  deleteMessage
-} = require('../controllers/messageController');
+const { sendMessage } = require('../controllers/messageController');
+const auth = require('../middleware/auth');  
+// POST route for sending messages
+router.post('/', auth, sendMessage);
 
-// Route to get messages by chat ID
-router.get('/:chat_id', getMessagesByChatId);
-
-// Route to send a message
-router.post('/', sendMessage);
-
-// Route to delete a message
-router.delete('/:id', deleteMessage);
+// Test GET route (Optional)
+router.get('/test', (req, res) => {
+  res.send('Message route is working');
+});
 
 module.exports = router;
