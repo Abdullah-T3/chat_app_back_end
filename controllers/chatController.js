@@ -1,42 +1,28 @@
-const db = require('../config/db');
+const db = require('../db');
 
-// Create Chat
+// Create a new chat
 exports.createChat = async (req, res) => {
-  const { user_two } = req.body;
-  const user_one = req.user.id;
+  const { user1_id, user2_id } = req.body;
+
   try {
-    await db.execute('INSERT INTO chats (user_one, user_two) VALUES (?, ?)', [user_one, user_two]);
-    res.status(201).json({ message: 'Chat created' });
+    // Create chat in database
+    const result = await db.query('INSERT INTO chats (user1_id, user2_id) VALUES (?, ?)', [user1_id, user2_id]);
+
+    res.status(201).json({ chat_id: result.insertId });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
 };
 
-// Get User Chats
-exports.getUserChats = async (req, res) => {
+// Get all chats for a user
+exports.getChats = async (req, res) => {
+  const { userId } = req.params;
+
   try {
-    const [chats] = await db.execute('SELECT * FROM chats WHERE user_one = ? OR user_two = ?', [req.user.id, req.user.id]);
+    // Get all chats for a user
+    const chats = await db.query('SELECT * FROM chats WHERE user1_id = ? OR user2_id = ?', [userId, userId]);
+
     res.json(chats);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// Get Chat By ID
-exports.getChatById = async (req, res) => {
-  try {
-    const [chat] = await db.execute('SELECT * FROM chats WHERE chat_id = ?', [req.params.id]);
-    res.json(chat);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-};
-
-// Delete Chat
-exports.deleteChat = async (req, res) => {
-  try {
-    await db.execute('DELETE FROM chats WHERE chat_id = ?', [req.params.id]);
-    res.json({ message: 'Chat deleted' });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
