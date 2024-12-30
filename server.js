@@ -111,6 +111,7 @@ app.get('/users', verifyToken, (req, res) => {
 });
 
 // -------------- LOGIN --------------------
+// -------------- LOGIN --------------------
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -140,13 +141,18 @@ app.post('/login', async (req, res) => {
       // Create JWT token
       const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
-      res.json({ message: 'Login successful', token });
+      res.json({ 
+        message: 'Login successful', 
+        token, 
+        userId: user.id // Add userId to the response
+      });
     });
   } catch (err) {
     console.error('Server error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
 
 // -------------- CREATE POST --------------------
 app.post('/posts', verifyToken, async (req, res) => {
