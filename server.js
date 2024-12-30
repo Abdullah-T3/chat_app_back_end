@@ -153,25 +153,24 @@ app.post('/posts', verifyToken, async (req, res) => {
   const { content } = req.body;
   const user_id = req.userId;
 
-  // Validate request body
   if (!content) {
     return res.status(400).json({ error: 'Content is required' });
   }
 
   try {
-    // Insert new post into the database
     db.query(
       'INSERT INTO posts (content, user_id, created_at) VALUES (?, ?, NOW())',
       [content, user_id],
       (err, result) => {
         if (err) {
-          return res.status(500).json({ error: 'Failed to create post' });
+          console.error('Database Error (Create Post):', err.message);
+          return res.status(500).json({ error: 'Failed to create post', details: err.message });
         }
         res.status(201).json({ message: 'Post created successfully', postId: result.insertId });
       }
     );
   } catch (err) {
-    console.error('Server error:', err);
+    console.error('Unexpected Server Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
