@@ -184,6 +184,27 @@ app.get('/posts', verifyToken, (req, res) => {
     res.status(200).json(result);
   });
 });
+// -------------- GET CHAT ID FOR A USER --------------------
+app.get('/chats', verifyToken, (req, res) => {
+  const user_id = req.userId;
+
+  db.query(
+    'SELECT chat_id FROM chats WHERE user_one = ? OR user_two = ?',
+    [user_id, user_id],
+    (err, result) => {
+      if (err) {
+        console.error('Database Error (Get Chat IDs):', err);
+        return res.status(500).json({ error: 'Failed to fetch chat IDs', details: err.message });
+      }
+
+      if (result.length === 0) {
+        return res.status(404).json({ error: 'No chats found for this user' });
+      }
+
+      res.status(200).json(result); // Returns an array of chat_id(s)
+    }
+  );
+});
 
 // -------------- CREATE MESSAGE --------------------
 const { v4: uuidv4 } = require('uuid');
