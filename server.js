@@ -175,15 +175,24 @@ app.post('/posts', verifyToken, async (req, res) => {
   }
 });
 
-// -------------- GET ALL POSTS --------------------
+// -------------- GET ALL POSTS WITH USERNAME --------------------
 app.get('/posts', verifyToken, (req, res) => {
-  db.query('SELECT * FROM posts', (err, result) => {
+  const query = `
+    SELECT posts.id, posts.content, posts.created_at, users.username 
+    FROM posts 
+    JOIN users ON posts.user_id = users.id
+    ORDER BY posts.created_at DESC
+  `;
+
+  db.query(query, (err, result) => {
     if (err) {
+      console.error('Database Error (Get Posts with Usernames):', err);
       return res.status(500).json({ error: 'Failed to fetch posts' });
     }
     res.status(200).json(result);
   });
 });
+
 // -------------- GET CHAT ID FOR A USER --------------------
 app.get('/chats', verifyToken, (req, res) => {
   const user_id = req.userId;
