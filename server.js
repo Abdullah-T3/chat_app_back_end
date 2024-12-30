@@ -5,27 +5,17 @@ const mysql = require('mysql2');
 const dotenv = require('dotenv');
 const { body, validationResult } = require('express-validator');
 const cors = require('cors');
-
-// Load environment variables from .env
 dotenv.config();
-
-// Initialize express app
 const app = express();
 const port = process.env.PORT || 3000;
-
-// Middleware to parse JSON bodies
 app.use(express.json());
 app.use(cors());
-
-// MySQL database connection
 const db = mysql.createConnection({
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
 });
-
-// Connect to MySQL
 db.connect((err) => {
   if (err) {
     console.error('Could not connect to database:', err);
@@ -34,7 +24,6 @@ db.connect((err) => {
   console.log('Connected to the database');
 });
 
-// Middleware to verify JWT token
 const verifyToken = (req, res, next) => {
   const token = req.headers['authorization']?.split(' ')[1];
   if (!token) {
@@ -50,7 +39,6 @@ const verifyToken = (req, res, next) => {
   });
 };
 
-// -------------- SIGNUP --------------------
 app.post(
   '/signup',
   [
@@ -61,7 +49,6 @@ app.post(
     body('username').notEmpty().withMessage('Username is required'),
   ],
   async (req, res) => {
-    // Validate request body
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
@@ -70,7 +57,6 @@ app.post(
     const { email, username, password } = req.body;
 
     try {
-      // Check if email already exists
       db.query('SELECT * FROM users WHERE email = ?', [email], async (err, result) => {
         if (err) {
           return res.status(500).json({ error: 'Database error' });
@@ -79,10 +65,8 @@ app.post(
           return res.status(400).json({ error: 'Email already exists' });
         }
 
-        // Hash password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Insert new user into the database
         db.query(
           'INSERT INTO users (email, username, password, created_at) VALUES (?, ?, ?, NOW())',
           [email, username, hashedPassword],
@@ -100,7 +84,6 @@ app.post(
     }
   }
 );
-// -------------- GET ALL USERS --------------------
 app.get('/users', verifyToken, (req, res) => {
   db.query('SELECT id, email, username, created_at FROM users', (err, result) => {
     if (err) {
@@ -110,18 +93,14 @@ app.get('/users', verifyToken, (req, res) => {
   });
 });
 
-// -------------- LOGIN --------------------
-// -------------- LOGIN --------------------
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
-  // Validate request body
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password are required' });
   }
 
   try {
-    // Find user by email
     db.query('SELECT * FROM users WHERE email = ?', [email], async (err, result) => {
       if (err) {
         return res.status(500).json({ error: 'Database error' });
@@ -132,19 +111,17 @@ app.post('/login', async (req, res) => {
 
       const user = result[0];
 
-      // Compare password with hashed password in DB
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return res.status(400).json({ error: 'Invalid email or password' });
       }
 
-      // Create JWT token
       const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: '1h' });
 
       res.json({ 
         message: 'Login successful', 
         token, 
-        userId: user.id // Add userId to the response
+        userId: user.id 
       });
     });
   } catch (err) {
@@ -154,7 +131,6 @@ app.post('/login', async (req, res) => {
 });
 
 
-// -------------- CREATE POST --------------------
 app.post('/posts', verifyToken, async (req, res) => {
   const { content } = req.body;
   const user_id = req.userId;
@@ -181,7 +157,6 @@ app.post('/posts', verifyToken, async (req, res) => {
   }
 });
 
-// -------------- GET ALL POSTS WITH USERNAME --------------------
 app.get('/posts', verifyToken, (req, res) => {
   const query = `
     SELECT posts.id, posts.content, posts.created_at, users.username 
@@ -199,7 +174,6 @@ app.get('/posts', verifyToken, (req, res) => {
   });
 });
 
-// -------------- GET CHAT ID FOR A USER --------------------
 app.get('/chats', verifyToken, (req, res) => {
   const user_id = req.userId;
 
@@ -216,12 +190,11 @@ app.get('/chats', verifyToken, (req, res) => {
         return res.status(404).json({ error: 'No chats found for this user' });
       }
 
-      res.status(200).json(result); // Returns an array of chat_id(s)
+      res.status(200).json(result); 
     }
   );
 });
 
-// -------------- CREATE MESSAGE --------------------
 const { v4: uuidv4 } = require('uuid');
 
 app.post('/messages', verifyToken, async (req, res) => {
@@ -233,7 +206,6 @@ app.post('/messages', verifyToken, async (req, res) => {
   }
 
   try {
-    // Check if both sender_id and receiver_id exist in the users table
     db.query('SELECT * FROM users WHERE id IN (?, ?)', [sender_id, receiver_id], (err, result) => {
       if (err) {
         console.error('Database Error (Check Users):', err);
@@ -243,7 +215,6 @@ app.post('/messages', verifyToken, async (req, res) => {
         return res.status(400).json({ error: 'One or both users do not exist' });
       }
 
-      // Check if a chat already exists between sender and receiver
       db.query('SELECT chat_id FROM chats WHERE (user_one = ? AND user_two = ?) OR (user_one = ? AND user_two = ?)', [sender_id, receiver_id, receiver_id, sender_id], (err, result) => {
         if (err) {
           console.error('Database Error (Check Chat):', err);
@@ -253,12 +224,10 @@ app.post('/messages', verifyToken, async (req, res) => {
         let finalChatId;
 
         if (result.length > 0) {
-          // If a chat exists, use the existing chat_id
           finalChatId = result[0].chat_id;
           insertMessage(finalChatId, content, sender_id, receiver_id, res);
         } else {
-          // If no chat exists, create a new chat
-          const newChatId = uuidv4(); // Generate a new UUID for the chat
+          const newChatId = uuidv4(); 
           const newChatQuery = `
             INSERT INTO chats (chat_id, user_one, user_two)
             VALUES (?, ?, ?)
@@ -270,7 +239,6 @@ app.post('/messages', verifyToken, async (req, res) => {
               return res.status(500).json({ error: 'Failed to create chat', details: err });
             }
 
-            // After creating the chat, insert the message
             insertMessage(newChatId, content, sender_id, receiver_id, res);
           });
         }
@@ -282,7 +250,6 @@ app.post('/messages', verifyToken, async (req, res) => {
   }
 });
 
-// Helper function to insert message
 const insertMessage = (chat_id, content, sender_id, receiver_id, res) => {
   db.query(
     'INSERT INTO messages (content, chat_id, sender_id, receiver_id, created_at) VALUES (?, ?, ?, ?, NOW())',
@@ -298,7 +265,6 @@ const insertMessage = (chat_id, content, sender_id, receiver_id, res) => {
 };
 
 
-// -------------- GET MESSAGES --------------------
 app.get('/messages', verifyToken, (req, res) => {
   const { chat_id } = req.query;
 
