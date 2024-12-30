@@ -194,50 +194,30 @@ app.post('/messages', verifyToken, async (req, res) => {
     return res.status(400).json({ error: 'Chat ID, content, and receiver ID are required' });
   }
 
-  try {
-    // Insert new message into the database
+  // Check if the chat_id exists in the chats table
+  db.query('SELECT * FROM chats WHERE chat_id = ?', [chat_id], (err, result) => {
+    if (err) {
+      console.error('Database Error (Check Chat):', err);
+      return res.status(500).json({ error: 'Failed to check chat', details: err });
+    }
+    if (result.length === 0) {
+      return res.status(400).json({ error: 'Chat ID does not exist' });
+    }
+
+    // Proceed with inserting the message if chat_id exists
     db.query(
       'INSERT INTO messages (content, chat_id, sender_id, receiver_id, created_at) VALUES (?, ?, ?, ?, NOW())',
       [content, chat_id, sender_id, receiver_id],
       (err, result) => {
         if (err) {
-          console.error('Database Error (Create Message):', err.message);
-          return res.status(500).json({ error: 'Failed to send message', details: err.message });
+          console.error('Database Error (Create Message):', err);
+          return res.status(500).json({ error: 'Failed to send message', details: err });
         }
         res.status(201).json({ message: 'Message sent successfully', messageId: result.insertId });
       }
     );
-  } catch (err) {
-    console.error('Unexpected Server Error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});app.post('/messages', verifyToken, async (req, res) => {
-  const { chat_id, content, receiver_id } = req.body;
-  const sender_id = req.userId;
-
-  if (!chat_id || !content || !receiver_id) {
-    return res.status(400).json({ error: 'Chat ID, content, and receiver ID are required' });
-  }
-
-  try {
-    // Insert new message into the database
-    db.query(
-      'INSERT INTO messages (content, chat_id, sender_id, receiver_id, created_at) VALUES (?, ?, ?, ?, NOW())',
-      [content, chat_id, sender_id, receiver_id],
-      (err, result) => {
-        if (err) {
-          console.error('Database Error (Create Message):', err.message);
-          return res.status(500).json({ error: 'Failed to send message', details: err.message });
-        }
-        res.status(201).json({ message: 'Message sent successfully', messageId: result.insertId });
-      }
-    );
-  } catch (err) {
-    console.error('Unexpected Server Error:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
+  });
 });
-
 
 
 // -------------- GET MESSAGES --------------------
