@@ -207,15 +207,21 @@ app.post('/messages', verifyToken, async (req, res) => {
         return res.status(400).json({ error: 'One or both users do not exist' });
       }
 
-      // Check if the chat_id exists in the chats table
-      db.query('SELECT * FROM chats WHERE chat_id = ?', [chat_id], (err, result) => {
+      // Check if a chat already exists between sender and receiver
+      db.query('SELECT chat_id FROM chats WHERE (user_one = ? AND user_two = ?) OR (user_one = ? AND user_two = ?)', [sender_id, receiver_id, receiver_id, sender_id], (err, result) => {
         if (err) {
           console.error('Database Error (Check Chat):', err);
           return res.status(500).json({ error: 'Failed to check chat', details: err });
         }
 
-        if (result.length === 0) {
-          // If chat_id doesn't exist, create a new chat
+        let finalChatId;
+
+        if (result.length > 0) {
+          // If a chat exists, use the existing chat_id
+          finalChatId = result[0].chat_id;
+          insertMessage(finalChatId, content, sender_id, receiver_id, res);
+        } else {
+          // If no chat exists, create a new chat
           const newChatId = uuidv4(); // Generate a new UUID for the chat
           const newChatQuery = `
             INSERT INTO chats (chat_id, user_one, user_two)
@@ -231,9 +237,6 @@ app.post('/messages', verifyToken, async (req, res) => {
             // After creating the chat, insert the message
             insertMessage(newChatId, content, sender_id, receiver_id, res);
           });
-        } else {
-          // If chat exists, proceed with message insertion
-          insertMessage(chat_id, content, sender_id, receiver_id, res);
         }
       });
     });
