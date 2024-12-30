@@ -190,7 +190,6 @@ app.post('/messages', verifyToken, async (req, res) => {
   const { chat_id, content, receiver_id } = req.body;
   const sender_id = req.userId;
 
-  // Validate request body
   if (!chat_id || !content || !receiver_id) {
     return res.status(400).json({ error: 'Chat ID, content, and receiver ID are required' });
   }
@@ -202,16 +201,44 @@ app.post('/messages', verifyToken, async (req, res) => {
       [content, chat_id, sender_id, receiver_id],
       (err, result) => {
         if (err) {
-          return res.status(500).json({ error: 'Failed to send message' });
+          console.error('Database Error (Create Message):', err.message);
+          return res.status(500).json({ error: 'Failed to send message', details: err.message });
         }
         res.status(201).json({ message: 'Message sent successfully', messageId: result.insertId });
       }
     );
   } catch (err) {
-    console.error('Server error:', err);
+    console.error('Unexpected Server Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});app.post('/messages', verifyToken, async (req, res) => {
+  const { chat_id, content, receiver_id } = req.body;
+  const sender_id = req.userId;
+
+  if (!chat_id || !content || !receiver_id) {
+    return res.status(400).json({ error: 'Chat ID, content, and receiver ID are required' });
+  }
+
+  try {
+    // Insert new message into the database
+    db.query(
+      'INSERT INTO messages (content, chat_id, sender_id, receiver_id, created_at) VALUES (?, ?, ?, ?, NOW())',
+      [content, chat_id, sender_id, receiver_id],
+      (err, result) => {
+        if (err) {
+          console.error('Database Error (Create Message):', err.message);
+          return res.status(500).json({ error: 'Failed to send message', details: err.message });
+        }
+        res.status(201).json({ message: 'Message sent successfully', messageId: result.insertId });
+      }
+    );
+  } catch (err) {
+    console.error('Unexpected Server Error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+
 
 // -------------- GET MESSAGES --------------------
 app.get('/messages', verifyToken, (req, res) => {
