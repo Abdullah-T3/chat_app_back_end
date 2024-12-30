@@ -190,34 +190,61 @@ app.post('/messages', verifyToken, async (req, res) => {
   const { chat_id, content, receiver_id } = req.body;
   const sender_id = req.userId;
 
-  if (!chat_id || !content || !receiver_id) {
-    return res.status(400).json({ error: 'Chat ID, content, and receiver ID are required' });
+  if (!content || !receiver_id) {
+    return res.status(400).json({ error: 'Content and receiver ID are required' });
   }
 
-  // Check if the chat_id exists in the chats table
-  db.query('SELECT * FROM chats WHERE chat_id = ?', [chat_id], (err, result) => {
-    if (err) {
-      console.error('Database Error (Check Chat):', err);
-      return res.status(500).json({ error: 'Failed to check chat', details: err });
-    }
-    if (result.length === 0) {
-      return res.status(400).json({ error: 'Chat ID does not exist' });
-    }
-
-    // Proceed with inserting the message if chat_id exists
-    db.query(
-      'INSERT INTO messages (content, chat_id, sender_id, receiver_id, created_at) VALUES (?, ?, ?, ?, NOW())',
-      [content, chat_id, sender_id, receiver_id],
-      (err, result) => {
-        if (err) {
-          console.error('Database Error (Create Message):', err);
-          return res.status(500).json({ error: 'Failed to send message', details: err });
-        }
-        res.status(201).json({ message: 'Message sent successfully', messageId: result.insertId });
+  try {
+    // Check if the chat_id exists in the chats table
+    db.query('SELECT * FROM chats WHERE chat_id = ?', [chat_id], (err, result) => {
+      if (err) {
+        console.error('Database Error (Check Chat):', err);
+        return res.status(500).json({ error: 'Failed to check chat', details: err });
       }
-    );
-  });
+
+      if (result.length === 0) {
+        // If chat_id doesn't exist, create a new chat
+        const newChatId = require('uuid').v4(); // Generate a new UUID for the chat
+        const newChatQuery = `
+          INSERT INTO chats (chat_id, user_one, user_two)
+          VALUES (?, ?, ?)
+        `;
+        
+        db.query(newChatQuery, [newChatId, sender_id, receiver_id], (err, result) => {
+          if (err) {
+            console.error('Database Error (Create Chat):', err);
+            return res.status(500).json({ error: 'Failed to create chat', details: err });
+          }
+          
+          // After creating the chat, insert the message
+          insertMessage(newChatId, content, sender_id, receiver_id, res);
+        });
+      } else {
+        // If chat exists, proceed with message insertion
+        insertMessage(chat_id, content, sender_id, receiver_id, res);
+      }
+    });
+  } catch (err) {
+    console.error('Server Error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
+
+// Helper function to insert message
+const insertMessage = (chat_id, content, sender_id, receiver_id, res) => {
+  db.query(
+    'INSERT INTO messages (content, chat_id, sender_id, receiver_id, created_at) VALUES (?, ?, ?, ?, NOW())',
+    [content, chat_id, sender_id, receiver_id],
+    (err, result) => {
+      if (err) {
+        console.error('Database Error (Create Message):', err);
+        return res.status(500).json({ error: 'Failed to send message', details: err });
+      }
+      res.status(201).json({ message: 'Message sent successfully', messageId: result.insertId });
+    }
+  );
+};
+
 
 
 // -------------- GET MESSAGES --------------------
